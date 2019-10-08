@@ -103,10 +103,11 @@ int parse_args(int argc, char *argv[], int *h, int *w)
     return 0;
 }
 
-__global__ void calcMandelbrot(int* out, int width, int height)
+__global__ void calcMandelbrot(int* out, int height, int width)
 {
-
     int id = threadIdx.x + blockIdx.x * blockDim.x;
+    //printf("%d %d %d\n", threadIdx.x, blockIdx.x, blockDim.x);
+    //printf("%d\n", id);
     int totalPixels = height*width;
     double xoffset = -(width - 1)/2.0;
     double yoffset = (height - 1)/2.0;
@@ -116,8 +117,9 @@ __global__ void calcMandelbrot(int* out, int width, int height)
     int max_iter = 1000;
 
     while (id < totalPixels) {
-        int col = id / height;
-		int row = id % height;
+        
+        int col = id / width;
+		int row = id % width;
 		
         int currentIndex = col + (row * width);
         
@@ -128,20 +130,19 @@ __global__ void calcMandelbrot(int* out, int width, int height)
         double a = 0.0, b = 0.0, a_old = 0.0, b_old = 0.0;
         double mag_sqr = 0.0;
         
-        while (iter<max_iter && mag_sqr<=4.0)
+        while (iter < max_iter && mag_sqr <= 4.0)
 		{
 			iter++;
 			a = a_old*a_old - b_old*b_old + x;
 			b = 2.0*a_old*b_old + y;
 			mag_sqr = a*a + b*b;
 			a_old = a;
-			b_old = b;
+            b_old = b;
+            //printf("Here!\n");
         }
         out[currentIndex] = iter;
-        
         id += blockDim.x * gridDim.x;
     }
-
 }
 
 int main(int argc, char* argv[])
@@ -156,16 +157,16 @@ int main(int argc, char* argv[])
     // Setup Memory
     printf("Height: %d Width: %d\n", height, width);
 
-    int image_size = height*width;
+    int image_size = width*height;
     int *dev_image;
     bmp = bmp_create(width, height, 32);
     cudaMalloc((void**)&dev_image, image_size*sizeof(int));
     int *host_image = (int *)malloc(image_size*sizeof(int));
 
-    dim3 block(height);
-    dim3 grid(width);
+    int threadsPerBlock = 256;
+    int blocksPerGrid = (image_size + threadsPerBlock - 1)/ threadsPerBlock;
 
-    calcMandelbrot<<<block, grid>>>(dev_image, height, width);
+    calcMandelbrot<<<blocksPerGrid, threadsPerBlock>>>(dev_image, height, width);
     cudaMemcpy(host_image, dev_image, (image_size*sizeof(int)), cudaMemcpyDeviceToHost);
     
     double x_col;
@@ -174,12 +175,12 @@ int main(int argc, char* argv[])
     int row = 0;
     for (int i = 0; i < image_size; i++) {
         //x_col = 0.0;
-        //printf("%f\n", (float)host_image[i]);
+        //if (i < 100) printf("%f\n", (float)host_image[i]);
         
         x_col = (240.0 - (( (((float)host_image[i] / ((float) 1000)) * 230.0))));
-        //printf("%f\n", x_col);
+        //if (i < 50) printf("%f\n", x_col);
         GroundColorMix(color, x_col, 1, 255);
-        //printf("%f\n", color[1]);
+        //if (i < 50) printf("%f\n", color[0]);
         pixel.red = color[0];
         pixel.green = color[1];
 	    pixel.blue = color[2];
