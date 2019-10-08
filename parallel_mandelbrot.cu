@@ -118,8 +118,10 @@ __global__ void calcMandelbrot(int* out, int height, int width)
 
     while (id < totalPixels) {
         
-        int col = id / width;
-		int row = id % width;
+        int col = id % width;
+        int row = id / width;
+        
+        //printf("ID: %d Row: %d Col: %d\n", id, row, col);
 		
         int currentIndex = col + (row * width);
         
@@ -167,7 +169,7 @@ int main(int argc, char* argv[])
     int blocksPerGrid = (image_size + threadsPerBlock - 1)/ threadsPerBlock;
 
     calcMandelbrot<<<blocksPerGrid, threadsPerBlock>>>(dev_image, height, width);
-    cudaMemcpy(host_image, dev_image, (image_size*sizeof(int)), cudaMemcpyDeviceToHost);
+    cudaMemcpy(host_image, dev_image, (height*width*sizeof(int)), cudaMemcpyDeviceToHost);
     
     double x_col;
     double color[3];
@@ -175,7 +177,7 @@ int main(int argc, char* argv[])
     int row = 0;
     for (int i = 0; i < image_size; i++) {
         //x_col = 0.0;
-        //if (i < 100) printf("%f\n", (float)host_image[i]);
+        if (i < 50) printf("%f\n", (float)host_image[i]);
         
         x_col = (240.0 - (( (((float)host_image[i] / ((float) 1000)) * 230.0))));
         //if (i < 50) printf("%f\n", x_col);
