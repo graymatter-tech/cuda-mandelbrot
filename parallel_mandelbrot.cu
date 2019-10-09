@@ -99,13 +99,21 @@ __global__ void calcMandelbrot(int* out, int height, int width, float resolution
 {
     // Get individual threadId
     int id = threadIdx.x + blockIdx.x * blockDim.x;
+    // Setup shared block data
+    __shared__ double data[5];
 
-    // Setup local variables
+    // First thread in each block initialises the data
+    if (threadIdx.x == 0) {
+        data[0] = -(width - 1)/2.0; // xoffset
+        data[1] = (height - 1)/2.0; // yoffset
+        data[2] = -0.55;    // xcenter
+        data[3] = 0.6;      // ycenter
+        data[4] = 8700.0;   // resolution
+    }
+
+    __syncthreads();
+
     int totalPixels = height*width;
-    double xoffset = -(width - 1)/2.0;
-    double yoffset = (height - 1)/2.0;
-    double xcenter = -0.55;
-    double ycenter = 0.6;
     int max_iter = 1000;
 
     // For any thread within the image
@@ -117,8 +125,8 @@ __global__ void calcMandelbrot(int* out, int height, int width, float resolution
 		
         int currentIndex = col + (row * width);
         
-        double x = xcenter + (xoffset + col)/resolution;
-        double y = ycenter + (yoffset - row)/resolution;
+        double x = data[2] + (data[0] + col)/data[4];
+        double y = data[3] + (data[1] - row)/data[4];
         
         int iter = 0;
         double a = 0.0, b = 0.0, a_old = 0.0, b_old = 0.0;
@@ -167,6 +175,7 @@ int main(int argc, char* argv[])
     double color[3];
     int col = 0;
     int row = 0;
+    // Iterate through image vector
     for (int i = 0; i < image_size; i++) {        
         x_col = (240.0 - (( (((float)host_image[i] / ((float) 1000)) * 230.0))));
         GroundColorMix(color, x_col, 1, 255);
@@ -184,6 +193,7 @@ int main(int argc, char* argv[])
 
     bmp_save(bmp, FILENAME);
     bmp_destroy(bmp);
+    // Free memory
     cudaFree(dev_image);
     free(host_image);
     
