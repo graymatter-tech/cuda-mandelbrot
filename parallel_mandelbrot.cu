@@ -1,13 +1,3 @@
-// Allocate Memory: Width*Height*sizeof(int)
-// Use GPU to calculate iter for each pixel
-// Pass that back to the host who then calculates the colour and creates the bitmap
-
-/*
-MEMORY
-xoffset, yoffset, resolution shared?
-
-*/
-
 extern "C" {
     #include "bmpfile.h"
 }
@@ -15,6 +5,25 @@ extern "C" {
 #include <cuda_runtime.h>
 #include <cuda.h>
 #include <stdio.h>
+
+/*
+ * Parallel Mandelbrot
+ * --------------------
+ * Author: Matthew Gray
+ * Student No: 220186070
+ * Email: mgray44@myune.edu.au
+ *
+ * This program uses the CUDA GPU to calculate
+ * Mandelbrot fractals, using parallelished
+ * threads.
+ *
+ * To compile:
+ * make parallel_mandelbrot or make
+ *
+ * To run:
+ * parallel_mandelbrot imageHeight imageWidth
+ *
+ */
 
 /*Colour Values*/
 #define COLOUR_DEPTH 255
@@ -84,6 +93,21 @@ void GroundColorMix(double* color, double x, double min, double max)
     }
 }
 
+/*
+ * Function that parses command line arguments
+ * 
+ * Parameters
+ *------------
+ * argc: Argument count
+ * argv[]: array containing arguments
+ * *height: pointer to location to store image height
+ * *width: location to store image width
+ * 
+ * Returns
+ * --------
+ * 0 if arguments correct, -1 otherwise
+ *
+ */
 int parse_args(int argc, char *argv[], int *height, int *width)
 {
     if ( (argc != 3) ||
@@ -95,12 +119,25 @@ int parse_args(int argc, char *argv[], int *height, int *width)
     return 0;
 }
 
+/*
+ * Function that calculcates the iterations for the mandelbrot
+ * algorithm for each pixel in the image and stores it in an
+ * array.
+ *
+ * Parameters
+ * -----------
+ * *out: Array containing iterations for each pixel
+ * height: Image height
+ * width: Image width
+ * resolution: Image resolution
+ *
+ */
 __global__ void calcMandelbrot(int* out, int height, int width, float resolution)
 {
     // Get individual threadId
     int id = threadIdx.x + blockIdx.x * blockDim.x;
     // Setup shared block data
-    __shared__ double data[5];
+    __shared__ double data[4];
 
     // First thread in each block initialises the data
     if (threadIdx.x == 0) {
@@ -108,7 +145,6 @@ __global__ void calcMandelbrot(int* out, int height, int width, float resolution
         data[1] = (height - 1)/2.0; // yoffset
         data[2] = -0.55;    // xcenter
         data[3] = 0.6;      // ycenter
-        data[4] = 8700.0;   // resolution
     }
 
     __syncthreads();
@@ -119,19 +155,21 @@ __global__ void calcMandelbrot(int* out, int height, int width, float resolution
     // For any thread within the image
     while (id < totalPixels) {
         
+        // Calculate thread pixel location within image
         int col = id % width;
         int row = id / width;
         
-		
+		// Use that to calculate its index within the image array
         int currentIndex = col + (row * width);
         
-        double x = data[2] + (data[0] + col)/data[4];
-        double y = data[3] + (data[1] - row)/data[4];
+        double x = data[2] + (data[0] + col)/resolution;
+        double y = data[3] + (data[1] - row)/resolution;
         
         int iter = 0;
         double a = 0.0, b = 0.0, a_old = 0.0, b_old = 0.0;
         double mag_sqr = 0.0;
         
+        // Use the algorithm for determining if it's contained within the set
         while (iter < max_iter && mag_sqr <= 4.0)
 		{
 			iter++;
@@ -141,6 +179,7 @@ __global__ void calcMandelbrot(int* out, int height, int width, float resolution
 			a_old = a;
             b_old = b;
         }
+        // Store iteration in image array
         out[currentIndex] = iter;
         id += blockDim.x * gridDim.x;
     }
@@ -158,6 +197,7 @@ int main(int argc, char* argv[])
     // Setup Memory
     int image_size = width*height;
     int *dev_image;
+    // Calculate image resolution based of input image size
     float resolution = image_size/240;
     bmp = bmp_create(width, height, 32);
     // Allocate memory for image as vector
@@ -176,7 +216,8 @@ int main(int argc, char* argv[])
     int col = 0;
     int row = 0;
     // Iterate through image vector
-    for (int i = 0; i < image_size; i++) {        
+    for (int i = 0; i < image_size; i++) {
+        // Calculate pixel colour based off of iterations        
         x_col = (240.0 - (( (((float)host_image[i] / ((float) 1000)) * 230.0))));
         GroundColorMix(color, x_col, 1, 255);
         pixel.red = color[0];
