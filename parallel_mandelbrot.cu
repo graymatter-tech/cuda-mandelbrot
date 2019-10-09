@@ -16,12 +16,6 @@ extern "C" {
 #include <cuda.h>
 #include <stdio.h>
 
-/*Mandelbrot values*/
-#define RESOLUTION 8700.0
-#define XCENTER -0.55
-#define YCENTER 0.6
-#define MAX_ITER 1000
-
 /*Colour Values*/
 #define COLOUR_DEPTH 255
 #define COLOUR_MAX 240.0
@@ -90,38 +84,36 @@ void GroundColorMix(double* color, double x, double min, double max)
     }
 }
 
-int parse_args(int argc, char *argv[], int *h, int *w)
+int parse_args(int argc, char *argv[], int *height, int *width)
 {
-    if ((argc != 3) ||
-        (*h = atoi(argv[1]) <= 0) ||
-        (*w = atoi(argv[2]) <= 0))
-        {
+    if ( (argc != 3) ||
+        (*height = atoi(argv[1])) <= 0 ||
+        (*width = atoi(argv[2])) <= 0) {
             fprintf(stderr, "Usage: ./%s height width\n", argv[0]);
             return -1;
         }
-    printf("%d\n", *h);
     return 0;
 }
 
-__global__ void calcMandelbrot(int* out, int height, int width)
+__global__ void calcMandelbrot(int* out, int height, int width, float resolution)
 {
+    // Get individual threadId
     int id = threadIdx.x + blockIdx.x * blockDim.x;
-    //printf("%d %d %d\n", threadIdx.x, blockIdx.x, blockDim.x);
-    //printf("%d\n", id);
+
+    // Setup local variables
     int totalPixels = height*width;
     double xoffset = -(width - 1)/2.0;
     double yoffset = (height - 1)/2.0;
-    double resolution = 8700.0;
     double xcenter = -0.55;
     double ycenter = 0.6;
     int max_iter = 1000;
 
+    // For any thread within the image
     while (id < totalPixels) {
         
         int col = id % width;
         int row = id / width;
         
-        //printf("ID: %d Row: %d Col: %d\n", id, row, col);
 		
         int currentIndex = col + (row * width);
         
@@ -140,7 +132,6 @@ __global__ void calcMandelbrot(int* out, int height, int width)
 			mag_sqr = a*a + b*b;
 			a_old = a;
             b_old = b;
-            //printf("Here!\n");
         }
         out[currentIndex] = iter;
         id += blockDim.x * gridDim.x;
@@ -152,41 +143,38 @@ int main(int argc, char* argv[])
     // Setup BMP file
     bmpfile_t *bmp;
     rgb_pixel_t pixel = {0, 0, 0, 0};
-    int height, width;
-    //if (parse_args(argc, argv, &height, &width) < 0) exit(EXIT_FAILURE);
-    height = atoi(argv[1]);
-    width = atoi(argv[2]);
-    // Setup Memory
-    printf("Height: %d Width: %d\n", height, width);
 
+    int height, width;
+    if (parse_args(argc, argv, &height, &width) < 0) exit(EXIT_FAILURE);
+    
+    // Setup Memory
     int image_size = width*height;
     int *dev_image;
+    float resolution = image_size/240;
     bmp = bmp_create(width, height, 32);
+    // Allocate memory for image as vector
     cudaMalloc((void**)&dev_image, image_size*sizeof(int));
     int *host_image = (int *)malloc(image_size*sizeof(int));
 
     int threadsPerBlock = 256;
     int blocksPerGrid = (image_size + threadsPerBlock - 1)/ threadsPerBlock;
 
-    calcMandelbrot<<<blocksPerGrid, threadsPerBlock>>>(dev_image, height, width);
+    calcMandelbrot<<<blocksPerGrid, threadsPerBlock>>>(dev_image, height, width, resolution);
+    // Copy iteration array back to host
     cudaMemcpy(host_image, dev_image, (height*width*sizeof(int)), cudaMemcpyDeviceToHost);
     
     double x_col;
     double color[3];
     int col = 0;
     int row = 0;
-    for (int i = 0; i < image_size; i++) {
-        //x_col = 0.0;
-        if (i < 50) printf("%f\n", (float)host_image[i]);
-        
+    for (int i = 0; i < image_size; i++) {        
         x_col = (240.0 - (( (((float)host_image[i] / ((float) 1000)) * 230.0))));
-        //if (i < 50) printf("%f\n", x_col);
         GroundColorMix(color, x_col, 1, 255);
-        //if (i < 50) printf("%f\n", color[0]);
         pixel.red = color[0];
         pixel.green = color[1];
 	    pixel.blue = color[2];
         bmp_set_pixel(bmp, col, row, pixel);
+        // Simulate the effect of iterating through a 2D image
         if (col == width - 1) {
             col = -1;
             row++;
